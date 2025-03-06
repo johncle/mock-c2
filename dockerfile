@@ -1,6 +1,3 @@
-FROM httpd:2.4.50
-RUN sed -i '1s|.*|#!/bin/bash|' /usr/local/apache2/cgi-bin/test-cgi
-RUN chmod -R +x /usr/local/apache2/cgi-bin
-CMD httpd-foreground -c "LoadModule cgid_module modules/mod_cgid.so"
-EXPOSE 80
- 
+FROM httpd:2.4.49-alpine
+COPY ./vulnerable-httpd.conf /usr/local/apache2/conf/httpd.conf
+RUN apk update && apk add bash
