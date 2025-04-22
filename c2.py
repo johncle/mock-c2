@@ -15,9 +15,8 @@ IV = b"randominitvector"
 
 def encrypt_data(data):
     # encrypt with AES and encode with base64 into "data" param
-    # cipher = AES.new(SECRET_KEY, AES.MODE_CBC, IV)
-    # ct_bytes = cipher.encrypt(pad(data.encode(), AES.block_size))
-    ct_bytes = data.encode()  # REMOVE THIS
+    cipher = AES.new(SECRET_KEY, AES.MODE_CBC, IV)
+    ct_bytes = cipher.encrypt(pad(data.encode(), AES.block_size))
     b64 = base64.b64encode(ct_bytes).decode()
     return "data=" + b64
 
@@ -26,9 +25,8 @@ def decrypt_data(data):
     # decode base64 from "data" param and decrypt with AES
     b64 = data.replace("data=", "")
     ct = base64.b64decode(b64)
-    # cipher = AES.new(SECRET_KEY, AES.MODE_CBC, IV)
-    # pt = unpad(cipher.decrypt(ct), AES.block_size)
-    pt = ct  # REMOVE THIS
+    cipher = AES.new(SECRET_KEY, AES.MODE_CBC, IV)
+    pt = unpad(cipher.decrypt(ct), AES.block_size)
     return pt.decode()
 
 
