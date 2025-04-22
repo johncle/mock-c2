@@ -81,6 +81,11 @@ def view_results():
     return jsonify(results)
 
 
+@app.route("/")
+def show_homepage():
+    return "totally legitimate app, nothing to see here\n"
+
+
 if __name__ == "__main__":
-    context = ("cert.pem", "key.pem")
+    context = ("cert/server.crt", "cert/server.key")
     app.run(host="0.0.0.0", port=8443, ssl_context=context)
