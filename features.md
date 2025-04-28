@@ -8,7 +8,8 @@
 -   Random ephemeral 256-bit AES key generation every time client starts
     -   Pre-shared key is used only during key exchange
 
-## Implant
+## Implant Obfuscation
 
 -   Obfuscated with Pyarmor
 -   Compiled into standalone binary with PyInstaller with `--one-file` flag
+
