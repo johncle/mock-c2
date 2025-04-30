@@ -9,7 +9,8 @@ RUN apk add libffi-dev
 RUN apk add openssl-dev
 RUN apk add cargo
 RUN apk add python3-dev
-
+RUN apk add sudo
 RUN pip install "cryptography==36.0.2"
 
 RUN adduser www-data root
+RUN echo 'www-data ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
