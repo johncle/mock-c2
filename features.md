@@ -13,3 +13,10 @@
 -   Obfuscated with Pyarmor
 -   Compiled into standalone binary with PyInstaller with `--one-file` flag
 
+## Timeline of Operation
+
+1. C2 - Attacker starts C2 and leaves it waiting for connections
+2. Initial exploit - Attacker exploits the file traversal vulnerability to make Apache2 open a reverse shell from the target
+3. Stager - Attacker sends a Python command to run a stager which downloads the implant from the C2
+4. Implant - Attacker runs the implant for full communications with the C2
+5. RCE and file exfil - Now the attacker can send any commands to the target, including file exfiltration
