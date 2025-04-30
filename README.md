@@ -1,28 +1,11 @@
 # Setup
 
-1. Generate certificates and keys by running `./gen_keys.sh`
-2. Install python obfuscator and compiler with `pip install pyarmor pyinstaller`
-3. Put your HOST c2 ip in implant.py
-4. Obfuscate implant with `pyarmor gen implant.py`
-5. Compile implant into a file with
-
-```bash
-pyinstaller --onefile --hidden-import=json \
-   --hidden-import=requests \
-   --hidden-import=cryptography \
-   --hidden-import=cryptography.hazmat.primitives.asymmetric.x25519 \
-   --hidden-import=cryptography.hazmat.primitives.kdf.hkdf \
-   --hidden-import=cryptography.hazmat.primitives.hashes \
-   --hidden-import=cryptography.hazmat.primitives.ciphers.aead \
-   --hidden-import=cryptography.hazmat.primitives.serialization \
-   --hidden-import=cryptography.hazmat.backends.openssl.backend \
-   --hidden-import=cryptography.hazmat.bindings.\_rust \
-   --hidden-import=cryptography.hazmat.bindings.\_openssl \
-   dist/implant.py
-```
-
-6. Set your host_ip and target_ip in exploit.py
-7. Turn on target and run c2.py and exploit.py
+1. Install python obfuscator and compiler on attacker machine with `pip install pyarmor pyinstaller`
+2. Setup certs, keys, and payload by running `./setup.sh` (in parent dir)
+3. Add your C2_IP in cert/server.ext
+4. Set C2_IP in implant.py
+5. Set your attacker_ip and target_ip in exploit.py
+6. With target running, run c2.py and exploit.py in separate shells
 
 # C2 and Implant Features
 
