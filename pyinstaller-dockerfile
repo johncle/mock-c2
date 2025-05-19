@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     py3-pip
 
 WORKDIR /app
-COPY stripped_implant.py d-ISkvI.py
+COPY implant.py d-ISkvI.py
 
 RUN pip install requests cryptography urllib3 pyarmor pyinstaller
 
